@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<!-- Adapted from https://github.com/jameshfisher/serverless-webrtc -->
+<!-- Using some code from https://github.com/vasanthv/hello as well -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>WebRTC chat</title>
+  </head>
+  <body>
+    <script src="https://code.jquery.com/jquery-1.11.3.min.js"></script>
+    <p><th align="left">Offer/Answer:</th></p>
+    <p>
+      <th><textarea id="offer" rows="6" cols="80"></textarea></th>
+    </p>
+    <p>
+      <th><button onclick="create()">Create offer</button></th>
+      <th><button onclick="join()">Join offer</button></th>
+      <th><button onclick="gotAnswer()">Accept answer</button></th>
+      <th><button onclick="say()">Send message</button></th>
+      <button onclick="clr()">Clear</button>
+    </p>
+
+    <ul id="messages"></ul>
+
+    <script>
+      var RTCPeerConnection =
+        window.RTCPeerConnection ||
+        webkitRTCPeerConnection ||
+        mozRTCPeerConnection;
+      var peerConn = new RTCPeerConnection({
+        iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }]
+      });
+      var dataChannel = null;
+      var local_media_stream = null;
+      var USE_AUDIO = true;
+      var USE_VIDEO = true;
+      setup_local_media();
+
+      function create() {
+        log("Creating ...");
+        dataChannel = peerConn.createDataChannel("test");
+        dataChannel.onopen = e => {
+          /* window.say = msg => {
+            dataChannel.send(msg);
+          }; */
+          log("Connected, send messages");
+        };
+        dataChannel.onmessage = e => {
+          log("Got message: " + e.data);
+        };
+        peerConn.onaddstream = function(event) {
+          console.log("onAddStream", event);
+          const videoWrap = document.createElement("div");
+          videoWrap.className = "video";
+          const remote_media = document.createElement("video");
+          videoWrap.appendChild(remote_media);
+          remote_media.setAttribute("playsinline", true);
+          remote_media.mediaGroup = "remotevideo";
+          remote_media.autoplay = true;
+          remote_media.controls = false;
+          document.body.appendChild(videoWrap);
+          attachMediaStream(remote_media, event.stream);
+        };
+        peerConn.addStream(local_media_stream);
+
+        peerConn
+          .createOffer({})
+          .then(desc => peerConn.setLocalDescription(desc))
+          .then(() => {})
+          .catch(err => console.error(err));
+        peerConn.onicecandidate = e => {
+          if (e.candidate == null) {
+            log(
+              "Get joiners to join the offer: " +
+                JSON.stringify(peerConn.localDescription)
+            );
+          }
+        };
+
+        /* window.gotAnswer = answer => {
+          console.log("Initializing ...");
+          peerConn.setRemoteDescription(new RTCSessionDescription(answer));
+        }; */
+      }
+      function gotAnswer() {
+        var answer = JSON.parse(document.getElementById("offer").value);
+        console.log("Initializing ...");
+        peerConn.setRemoteDescription(new RTCSessionDescription(answer));
+      }
+
+      function join() {
+        var offer = JSON.parse(document.getElementById("offer").value);
+        log("Joining ...");
+
+        peerConn.ondatachannel = e => {
+          dataChannel = e.channel;
+          dataChannel.onopen = e => {
+            /* window.say = msg => {
+            dataChannel.send(msg);
+          }; */
+            log("Connected, send messages");
+          };
+          dataChannel.onmessage = e => {
+            log("Got message: " + e.data);
+          };
+        };
+
+        peerConn.onicecandidate = e => {
+          if (e.candidate == null) {
+            log(
+              "Get the creator to accept answer: " +
+                JSON.stringify(peerConn.localDescription)
+            );
+          }
+        };
+        peerConn.onaddstream = function(event) {
+          console.log("onAddStream", event);
+          const videoWrap = document.createElement("div");
+          videoWrap.className = "video";
+          const remote_media = document.createElement("video");
+          videoWrap.appendChild(remote_media);
+          remote_media.setAttribute("playsinline", true);
+          remote_media.mediaGroup = "remotevideo";
+          remote_media.autoplay = true;
+          remote_media.controls = false;
+          document.body.appendChild(videoWrap);
+          attachMediaStream(remote_media, event.stream);
+        };
+        peerConn.addStream(local_media_stream);
+
+        var offerDesc = new RTCSessionDescription(offer);
+        peerConn.setRemoteDescription(offerDesc);
+        peerConn
+          .createAnswer({})
+          .then(answerDesc => peerConn.setLocalDescription(answerDesc))
+          .catch(err => console.warn("Couldn't create answer"));
+      }
+
+      function say() {
+        var msg = document.getElementById("offer").value;
+        dataChannel.send(msg);
+        log("Sent message: " + msg);
+      }
+
+      function log(message) {
+        var li = document.createElement("li");
+        li.innerHTML = message;
+        document.getElementById("messages").appendChild(li);
+      }
+
+      function clr() {
+        document.getElementById("messages").innerHTML = "";
+      }
+
+      function setup_local_media(callback, errorback) {
+        if (local_media_stream != null) {
+          /* ie, if we've already been initialized */
+          if (callback) callback();
+          return;
+        }
+        attachMediaStream = function(element, stream) {
+          // console.log('DEPRECATED, attachMediaStream will soon be removed.');
+          element.srcObject = stream;
+        };
+        navigator.mediaDevices
+          .getUserMedia({ audio: USE_AUDIO, video: USE_VIDEO })
+          .then(stream => {
+            local_media_stream = stream;
+            const videoWrap = document.createElement("div");
+            videoWrap.className = "video";
+            videoWrap.setAttribute("id", "selfVideoWrap");
+            const btnWrap = document.createElement("div");
+            btnWrap.setAttribute("id", "btnWrap");
+            const muteBtn = document.createElement("button");
+            muteBtn.setAttribute("id", "mutebtn");
+            muteBtn.className = "fas fa-microphone";
+            muteBtn.addEventListener("click", e => {
+              local_media_stream.getAudioTracks()[0].enabled = !local_media_stream.getAudioTracks()[0]
+                .enabled;
+              e.target.className =
+                "fas fa-microphone" +
+                (local_media_stream.getAudioTracks()[0].enabled
+                  ? ""
+                  : "-slash");
+            });
+            btnWrap.appendChild(muteBtn);
+            const videoMuteBtn = document.createElement("button");
+            videoMuteBtn.setAttribute("id", "videomutebtn");
+            videoMuteBtn.className = "fas fa-video";
+            videoMuteBtn.addEventListener("click", e => {
+              local_media_stream.getVideoTracks()[0].enabled = !local_media_stream.getVideoTracks()[0]
+                .enabled;
+              e.target.className =
+                "fas fa-video" +
+                (local_media_stream.getVideoTracks()[0].enabled
+                  ? ""
+                  : "-slash");
+            });
+            btnWrap.appendChild(videoMuteBtn);
+            videoWrap.appendChild(btnWrap);
+            const local_media = document.createElement("video");
+            videoWrap.appendChild(local_media);
+            local_media.setAttribute("id", "selfVideo");
+            local_media.setAttribute("playsinline", true);
+            local_media.autoplay = true;
+            local_media.muted = true;
+            local_media.volume = 0;
+            local_media.controls = false;
+            document.body.appendChild(videoWrap);
+            attachMediaStream(local_media, stream);
+            resizeVideos();
+            if (callback) callback();
+          })
+          .catch(() => {
+            /* user denied access to a/v */
+            alert("This site will not work without camera/microphone access.");
+            if (errorback) errorback();
+          });
+      }
+    </script>
+  </body>
+</html>
